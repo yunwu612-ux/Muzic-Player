@@ -425,14 +425,24 @@ private fun PlayerEditButton(context: Context, song: MusicItem, onRefresh: () ->
             runCatching {
                 context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val text = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-            }.getOrNull()
-            if (!text.isNullOrBlank()) {
-                saveLyrics(context, song.id, text)
-                onRefresh()
-                message = "歌词已导入。"
-            } else message = "无法读取歌词文件。"
+            val name = runCatching {
+                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                }
+            }.getOrNull().orEmpty()
+            val lowerName = name.lowercase(java.util.Locale.ROOT)
+            if (lowerName.endsWith(".lrc") || lowerName.endsWith(".txt") || lowerName.isBlank()) {
+                val text = runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8).removePrefix("\uFEFF") }
+                }.getOrNull()
+                if (!text.isNullOrBlank()) {
+                    saveLyrics(context, song.id, text)
+                    onRefresh()
+                    message = "歌词已导入。"
+                } else message = "无法读取歌词文件。"
+            } else {
+                message = "请选择 .lrc 或 .txt 歌词文件。"
+            }
         }
     }
     val coverPicker = rememberLauncherForActivityResult(
@@ -450,7 +460,7 @@ private fun PlayerEditButton(context: Context, song: MusicItem, onRefresh: () ->
             title = { Text("编辑歌曲") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { open = false; lyricPicker.launch(arrayOf("text/*", "application/octet-stream")) }, modifier = Modifier.fillMaxWidth()) { Text("导入歌词（.lrc / .txt）") }
+                    Button(onClick = { open = false; lyricPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("导入歌词（.lrc / .txt）") }
                     Button(onClick = { open = false; coverPicker.launch(arrayOf("image/*")) }, modifier = Modifier.fillMaxWidth()) { Text("导入封面图片") }
                 }
             },
@@ -496,14 +506,19 @@ private data class LyricLine(val timeMs: Long, val text: String)
 private fun parseLyrics(raw: String?): List<LyricLine> {
     if (raw.isNullOrBlank()) return emptyList()
     val result = mutableListOf<LyricLine>()
-    val regex = Regex("\\[(\\d{1,3}):(\\d{2})(?:\\.(\\d{1,3}))?]\\s*(.*)")
-    raw.lineSequence().forEach { line ->
-        val match = regex.matchEntire(line.trim()) ?: return@forEach
-        val min = match.groupValues[1].toLongOrNull() ?: return@forEach
-        val sec = match.groupValues[2].toLongOrNull() ?: 0L
-        val fraction = match.groupValues[3]
-        val ms = when (fraction.length) { 1 -> fraction.toLong() * 100; 2 -> fraction.toLong() * 10; else -> fraction.toLongOrNull() ?: 0L }
-        result += LyricLine(min * 60_000L + sec * 1_000L + ms, match.groupValues[4].ifBlank { "♪" })
+    val regex = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]\\s*")
+    raw.lineSequence().forEach { rawLine ->
+        val line = rawLine.trim()
+        val matches = regex.findAll(line).toList()
+        if (matches.isEmpty()) return@forEach
+        val text = line.substring(matches.last().range.last + 1).trim().ifBlank { "♪" }
+        matches.forEach { match ->
+            val min = match.groupValues[1].toLongOrNull() ?: return@forEach
+            val sec = match.groupValues[2].toLongOrNull() ?: 0L
+            val fraction = match.groupValues[3]
+            val ms = when (fraction.length) { 1 -> fraction.toLong() * 100; 2 -> fraction.toLong() * 10; else -> fraction.toLongOrNull() ?: 0L }
+            result += LyricLine(min * 60_000L + sec * 1_000L + ms, text)
+        }
     }
     return result.sortedBy { it.timeMs }
 }
