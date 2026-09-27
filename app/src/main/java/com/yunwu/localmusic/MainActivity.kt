@@ -14,8 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -117,7 +115,7 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
                     c.getString(album) ?: "未知专辑",
                     uri,
                     c.getLong(duration),
-                    readEmbeddedLyrics(context, uri)
+                    readLyrics(context, uri)
                 )
             }
         }
@@ -131,17 +129,17 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     }
 
     DisposableEffect(controller) {
-        if (controller == null) return@DisposableEffect onDispose { }
+        val activeController = controller ?: return@DisposableEffect onDispose { }
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 currentId = mediaItem?.mediaId?.toLongOrNull()
             }
         }
-        controller.addListener(listener)
-        isPlaying = controller.isPlaying
-        currentId = controller.currentMediaItem?.mediaId?.toLongOrNull()
-        onDispose { controller.removeListener(listener) }
+        activeController.addListener(listener)
+        isPlaying = activeController.isPlaying
+        currentId = activeController.currentMediaItem?.mediaId?.toLongOrNull()
+        onDispose { activeController.removeListener(listener) }
     }
 
     val filtered = remember(songs, query) {
@@ -263,10 +261,9 @@ private fun EmptyState(empty: Boolean) {
 
 @Composable
 private fun SongRow(song: MusicItem, playing: Boolean, onClick: () -> Unit) {
-    val infinite = rememberInfiniteTransition(label = "row")
-    val pulse by infinite.animateFloat(
-        initialValue = 0.94f, targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse),
+    val pulse by animateFloatAsState(
+        targetValue = if (playing) 1.04f else 1f,
+        animationSpec = tween(450),
         label = "pulse"
     )
     Row(
@@ -437,13 +434,78 @@ private fun parseLyrics(raw: String?): List<LyricLine> {
     return result.sortedBy { it.timeMs }
 }
 
-private fun readEmbeddedLyrics(context: android.content.Context, uri: android.net.Uri): String? = runCatching {
-    val retriever = MediaMetadataRetriever()
-    context.contentResolver.openFileDescriptor(uri, "r")?.use { fd -> retriever.setDataSource(fd.fileDescriptor) }
-    val value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LYRIC)
-    retriever.release()
-    value
-}.getOrNull()
+private fun readLyrics(context: android.content.Context, uri: android.net.Uri): String? {
+    val lrc = runCatching {
+        val projection = arrayOf(MediaStore.Audio.Media.DATA)
+        context.contentResolver.query(uri, projection, null, null, null)?.use { c ->
+            val dataIndex = c.getColumnIndex(MediaStore.Audio.Media.DATA)
+            if (c.moveToFirst() && dataIndex >= 0) {
+                val path = c.getString(dataIndex)
+                if (!path.isNullOrBlank()) {
+                    val base = path.substringBeforeLast('.', path)
+                    val file = java.io.File(base + ".lrc")
+                    if (file.isFile) file.readText(Charsets.UTF_8) else null
+                } else null
+            } else null
+        }
+    }.getOrNull()
+    if (!lrc.isNullOrBlank()) return lrc
+
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val header = ByteArray(10)
+            if (input.read(header) != 10 || header[0] != 'I'.code.toByte() || header[1] != 'D'.code.toByte() || header[2] != '3'.code.toByte()) return@use null
+            val version = header[3].toInt() and 0xFF
+            val tagSize = if (version >= 4) {
+                ((header[6].toInt() and 0x7F) shl 21) or ((header[7].toInt() and 0x7F) shl 14) or
+                    ((header[8].toInt() and 0x7F) shl 7) or (header[9].toInt() and 0x7F)
+            } else {
+                ((header[6].toInt() and 0xFF) shl 24) or ((header[7].toInt() and 0xFF) shl 16) or
+                    ((header[8].toInt() and 0xFF) shl 8) or (header[9].toInt() and 0xFF)
+            }
+            val bytes = ByteArray(tagSize.coerceAtMost(8 * 1024 * 1024))
+            var read = 0
+            while (read < bytes.size) {
+                val n = input.read(bytes, read, bytes.size - read)
+                if (n <= 0) break
+                read += n
+            }
+            extractUsltLyrics(bytes, read, version)
+        }
+    }.getOrNull()
+}
+
+private fun extractUsltLyrics(data: ByteArray, length: Int, version: Int): String? {
+    var pos = 0
+    while (pos + 10 <= length) {
+        val id = String(data, pos, 4, Charsets.ISO_8859_1)
+        if (id.all { it == '\u0000' }) break
+        val size = if (version >= 4) {
+            ((data[pos + 4].toInt() and 0x7F) shl 21) or ((data[pos + 5].toInt() and 0x7F) shl 14) or
+                ((data[pos + 6].toInt() and 0x7F) shl 7) or (data[pos + 7].toInt() and 0x7F)
+        } else {
+            ((data[pos + 4].toInt() and 0xFF) shl 24) or ((data[pos + 5].toInt() and 0xFF) shl 16) or
+                ((data[pos + 6].toInt() and 0xFF) shl 8) or (data[pos + 7].toInt() and 0xFF)
+        }
+        if (size <= 0 || pos + 10 + size > length) break
+        if (id == "USLT") {
+            val payloadStart = pos + 10
+            val encoding = data[payloadStart].toInt() and 0xFF
+            val charset = when (encoding) { 1 -> Charsets.UTF_16; 2 -> Charsets.UTF_16BE; 3 -> Charsets.UTF_8; else -> Charsets.ISO_8859_1 }
+            var textStart = payloadStart + 4
+            val end = pos + 10 + size
+            val terminator = if (encoding == 1 || encoding == 2) 2 else 1
+            while (textStart + terminator <= end) {
+                val zero = data[textStart] == 0.toByte() && (terminator == 1 || data[textStart + 1] == 0.toByte())
+                if (zero) { textStart += terminator; break }
+                textStart++
+            }
+            if (textStart < end) return String(data, textStart, end - textStart, charset).trim()
+        }
+        pos += 10 + size
+    }
+    return null
+}
 
 private fun formatDuration(ms: Long): String {
     val s = ms.coerceAtLeast(0) / 1000
