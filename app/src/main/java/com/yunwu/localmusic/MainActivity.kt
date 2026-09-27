@@ -3,6 +3,7 @@ package com.yunwu.localmusic
 import android.Manifest
 import android.content.ContentUris
 import android.content.pm.PackageManager
+import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Bundle
@@ -32,10 +33,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +54,9 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -68,6 +76,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
+private const val PREFS_NAME = "local_music_metadata"
+private const val KEY_LYRICS_PREFIX = "lyrics_"
+
+private fun metadataPrefs(context: Context) =
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+private fun storedLyrics(context: Context, id: Long): String? =
+    metadataPrefs(context).getString(KEY_LYRICS_PREFIX + id, null)
+
+private fun saveLyrics(context: Context, id: Long, lyrics: String) {
+    metadataPrefs(context).edit().putString(KEY_LYRICS_PREFIX + id, lyrics).apply()
+}
+
+private fun coverFile(context: Context, id: Long): File =
+    File(File(context.filesDir, "music_covers").apply { mkdirs() }, "$id.jpg")
+
+private fun storedCoverUri(context: Context, id: Long): android.net.Uri? =
+    coverFile(context, id).takeIf { it.isFile }?.let { android.net.Uri.fromFile(it) }
+
+private fun importCover(context: Context, id: Long, source: android.net.Uri): android.net.Uri? = runCatching {
+    val target = coverFile(context, id)
+    context.contentResolver.openInputStream(source).use { input ->
+        requireNotNull(input)
+        target.outputStream().use { output -> input.copyTo(output) }
+    }
+    android.net.Uri.fromFile(target)
+}.getOrNull()
+
 @Composable
 private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     val context = LocalContext.current
@@ -84,42 +121,13 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
         permissionGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 
+    val scanScope = rememberCoroutineScope()
+
     fun scan() {
-        val list = mutableListOf<MusicItem>()
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.DURATION
-        )
-        context.contentResolver.query(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-            null,
-            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
-        )?.use { c ->
-            val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val title = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-            val artist = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-            val album = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-            val duration = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-            while (c.moveToNext()) {
-                val mediaId = c.getLong(id)
-                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId)
-                list += MusicItem(
-                    mediaId,
-                    c.getString(title) ?: "未知歌曲",
-                    c.getString(artist) ?: "未知歌手",
-                    c.getString(album) ?: "未知专辑",
-                    uri,
-                    c.getLong(duration),
-                    readLyrics(context, uri)
-                )
-            }
+        scanScope.launch {
+            val result = withContext(Dispatchers.IO) { scanSongs(context) }
+            songs = result
         }
-        songs = list
     }
 
     LaunchedEffect(permissionGranted) { if (permissionGranted) scan() }
@@ -205,7 +213,8 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
                         songs = songs,
                         controller = controller,
                         isPlaying = isPlaying,
-                        onBack = { showPlayer = false }
+                        onBack = { showPlayer = false },
+                        onRefresh = { scan() }
                     )
                 }
             }
@@ -224,6 +233,7 @@ private fun playSongList(controller: MediaController?, songs: List<MusicItem>, s
                     .setTitle(item.title)
                     .setArtist(item.artist)
                     .setAlbumTitle(item.album)
+                    .apply { item.coverUri?.let { setArtworkUri(it) } }
                     .build()
             ).build()
     }
@@ -309,22 +319,24 @@ private fun PlayerPage(
     songs: List<MusicItem>,
     controller: MediaController?,
     isPlaying: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onRefresh: () -> Unit
 ) {
+    val context = LocalContext.current
     var position by remember { mutableLongStateOf(controller?.currentPosition ?: 0L) }
     var duration by remember { mutableLongStateOf(controller?.duration?.takeIf { it > 0 } ?: song.duration) }
     var repeatMode by remember { mutableIntStateOf(controller?.repeatMode ?: Player.REPEAT_MODE_OFF) }
     var shuffle by remember { mutableStateOf(controller?.shuffleModeEnabled ?: false) }
     var lyricsIndex by remember { mutableIntStateOf(0) }
+    val lyrics = remember(song.id, song.lyrics) { parseLyrics(song.lyrics) }
 
-    LaunchedEffect(controller) {
+    LaunchedEffect(controller, song.id, lyrics) {
         while (true) {
             controller?.let {
                 position = it.currentPosition.coerceAtLeast(0L)
                 duration = it.duration.takeIf { d -> d > 0 } ?: song.duration
-                val parsed = parseLyrics(song.lyrics)
-                if (parsed.isNotEmpty()) {
-                    lyricsIndex = parsed.indexOfLast { line -> line.timeMs <= position }.coerceAtLeast(0)
+                if (lyrics.isNotEmpty()) {
+                    lyricsIndex = lyrics.indexOfLast { line -> line.timeMs <= position }.coerceAtLeast(0)
                 }
             }
             delay(300)
@@ -337,6 +349,7 @@ private fun PlayerPage(
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.KeyboardArrowDown, "返回") }
             Text("正在播放", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            PlayerEditButton(context, song, onRefresh)
             IconButton(onClick = { shuffle = !shuffle; controller?.shuffleModeEnabled = shuffle }) {
                 Icon(Icons.Default.Shuffle, "随机播放", tint = if (shuffle) MaterialTheme.colorScheme.primary else Color.Gray)
             }
@@ -345,8 +358,15 @@ private fun PlayerPage(
         Spacer(Modifier.height(22.dp))
         val rotation by animateFloatAsState(if (isPlaying) 360f else 0f, tween(900), label = "cover")
         Box(Modifier.fillMaxWidth().weight(0.34f), contentAlignment = Alignment.Center) {
+            val coverBitmap = remember(song.id, song.coverUri) {
+                song.coverUri?.let { uri -> runCatching { context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream) }.getOrNull() }
+            }
             Box(Modifier.size(250.dp).graphicsLayer { rotationZ = rotation / 18f }.clip(RoundedCornerShape(32.dp)).background(Color(0xFFDDE3EA)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.MusicNote, null, Modifier.size(110.dp), tint = Color(0xFF66717E))
+                if (coverBitmap != null) {
+                    Image(coverBitmap.asImageBitmap(), contentDescription = "封面", modifier = Modifier.fillMaxSize())
+                } else {
+                    Icon(Icons.Default.MusicNote, null, Modifier.size(110.dp), tint = Color(0xFF66717E))
+                }
             }
         }
         Text(song.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -364,7 +384,6 @@ private fun PlayerPage(
         }
 
         Spacer(Modifier.height(8.dp))
-        val lyrics = remember(song.id, song.lyrics) { parseLyrics(song.lyrics) }
         if (lyrics.isNotEmpty()) {
             LyricsPanel(lyrics, lyricsIndex)
         } else {
@@ -390,6 +409,60 @@ private fun PlayerPage(
             Spacer(Modifier.size(48.dp))
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+
+@Composable
+private fun PlayerEditButton(context: Context, song: MusicItem, onRefresh: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val lyricPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull()
+            if (!text.isNullOrBlank()) {
+                saveLyrics(context, song.id, text)
+                onRefresh()
+                message = "歌词已导入。"
+            } else message = "无法读取歌词文件。"
+        }
+    }
+    val coverPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            if (importCover(context, song.id, uri) != null) { onRefresh(); message = "封面已导入。" }
+            else message = "封面导入失败。"
+        }
+    }
+    IconButton(onClick = { open = true }) { Icon(Icons.Default.Edit, "编辑歌曲") }
+    if (open) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text("编辑歌曲") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = { open = false; lyricPicker.launch(arrayOf("text/*", "application/octet-stream")) }, modifier = Modifier.fillMaxWidth()) { Text("导入歌词（.lrc / .txt）") }
+                    Button(onClick = { open = false; coverPicker.launch(arrayOf("image/*")) }, modifier = Modifier.fillMaxWidth()) { Text("导入封面图片") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { open = false }) { Text("关闭") } }
+        )
+    }
+    if (message != null) {
+        AlertDialog(
+            onDismissRequest = { message = null },
+            title = { Text("完成") },
+            text = { Text(message!!) },
+            confirmButton = { TextButton(onClick = { message = null }) { Text("知道了") } }
+        )
     }
 }
 
@@ -432,6 +505,47 @@ private fun parseLyrics(raw: String?): List<LyricLine> {
         result += LyricLine(min * 60_000L + sec * 1_000L + ms, match.groupValues[4].ifBlank { "♪" })
     }
     return result.sortedBy { it.timeMs }
+}
+
+
+private fun scanSongs(context: Context): List<MusicItem> {
+    val list = mutableListOf<MusicItem>()
+    val projection = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.TITLE,
+        MediaStore.Audio.Media.ARTIST,
+        MediaStore.Audio.Media.ALBUM,
+        MediaStore.Audio.Media.DURATION
+    )
+    context.contentResolver.query(
+        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+        null,
+        "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
+    )?.use { c ->
+        val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+        val title = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+        val artist = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+        val album = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+        val duration = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+        while (c.moveToNext()) {
+            val mediaId = c.getLong(id)
+            val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId)
+            val imported = storedLyrics(context, mediaId)
+            list += MusicItem(
+                mediaId,
+                c.getString(title) ?: "未知歌曲",
+                c.getString(artist) ?: "未知歌手",
+                c.getString(album) ?: "未知专辑",
+                uri,
+                c.getLong(duration),
+                imported ?: readLyrics(context, uri),
+                storedCoverUri(context, mediaId)
+            )
+        }
+    }
+    return list
 }
 
 private fun readLyrics(context: android.content.Context, uri: android.net.Uri): String? {

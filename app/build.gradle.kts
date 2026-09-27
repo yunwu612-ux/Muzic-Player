@@ -17,7 +17,32 @@ android {
         jvmTarget = "17"
     }
 
-    defaultConfig { applicationId = "com.yunwu.localmusic"; minSdk = 26; targetSdk = 35; versionCode = 2; versionName = "1.1" }
+    defaultConfig {
+        applicationId = "com.yunwu.localmusic"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 3
+        versionName = "1.2"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystore = System.getenv("SIGNING_KEYSTORE")
+            if (!keystore.isNullOrBlank()) {
+                storeFile = file(keystore)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
 }
 
 dependencies {

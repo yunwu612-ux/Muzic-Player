@@ -7,5 +7,6 @@ data class MusicItem(
     val album: String,
     val uri: android.net.Uri,
     val duration: Long,
-    val lyrics: String? = null
+    val lyrics: String? = null,
+    val coverUri: android.net.Uri? = null
 )
