@@ -12,3 +12,6 @@
 - 支持 LRC 时间轴歌词滚动同步
 - Media3 MediaSessionService 后台播放
 - HyperOS 3 系统媒体通知/超级岛兼容
+
+
+V1.2：播放页编辑（导入歌词/封面）、性能优化，保留现有动效。
