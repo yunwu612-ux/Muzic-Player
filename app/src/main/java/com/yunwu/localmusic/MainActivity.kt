@@ -51,8 +51,10 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     var selected by remember { mutableStateOf<MusicItem?>(null) }
     val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> permissionGranted = ok }
-    LaunchedEffect(Unit) { permissionGranted = androidx.core.content.ContextCompat.checkSelfPermission(androidx.compose.ui.platform.LocalContext.current, permission) == PackageManager.PERMISSION_GRANTED }
     val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(permission) {
+        permissionGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }
     fun scan() {
         val list = mutableListOf<MusicItem>()
         val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION)
