@@ -440,7 +440,7 @@ private fun PlayerPage(
                 duration = it.duration.takeIf { d -> d > 0 && d != androidx.media3.common.C.TIME_UNSET } ?: song.duration
                 if (!isSeeking) {
                     position = it.currentPosition.coerceAtLeast(0L)
-                    seekTarget = position.toFloat()
+                    seekTarget = position
                 }
                 if (lyrics.isNotEmpty() && !isSeeking) {
                     lyricsIndex = lyrics.indexOfLast { line -> line.timeMs <= position }.coerceAtLeast(0)
