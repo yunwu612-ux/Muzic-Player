@@ -426,14 +426,23 @@ private fun PlayerPage(
     var shuffle by remember { mutableStateOf(controller?.shuffleModeEnabled ?: false) }
     var lyricsIndex by remember { mutableIntStateOf(0) }
     var isSeeking by remember { mutableStateOf(false) }
+    var seekTarget by remember(song.id) { mutableFloatStateOf(0f) }
+    val sliderScale by animateFloatAsState(
+        targetValue = if (isSeeking) 1.12f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "seek-slider-emphasis"
+    )
     val lyrics = remember(song.id, song.lyrics) { parseLyrics(song.lyrics) }
 
     LaunchedEffect(controller, song.id, lyrics) {
         while (true) {
             controller?.let {
-                if (!isSeeking) position = it.currentPosition.coerceAtLeast(0L)
-                duration = it.duration.takeIf { d -> d > 0 } ?: song.duration
-                if (lyrics.isNotEmpty()) {
+                duration = it.duration.takeIf { d -> d > 0 && d != androidx.media3.common.C.TIME_UNSET } ?: song.duration
+                if (!isSeeking) {
+                    position = it.currentPosition.coerceAtLeast(0L)
+                    seekTarget = position.toFloat()
+                }
+                if (lyrics.isNotEmpty() && !isSeeking) {
                     lyricsIndex = lyrics.indexOfLast { line -> line.timeMs <= position }.coerceAtLeast(0)
                 }
             }
@@ -471,9 +480,28 @@ private fun PlayerPage(
         Spacer(Modifier.height(12.dp))
 
         Slider(
-            value = if (duration > 0) position.toFloat().coerceIn(0f, duration.toFloat()) else 0f,
-            onValueChange = { isSeeking = true; position = it.toLong() },
-            onValueChangeFinished = { controller?.seekTo(position.coerceIn(0L, duration.coerceAtLeast(0L))); isSeeking = false }
+            value = if (duration > 0) (if (isSeeking) seekTarget else position.toFloat()).coerceIn(0f, duration.toFloat()) else 0f,
+            onValueChange = { value ->
+                // Update the thumb immediately and send the seek while dragging. This avoids
+                // the playback polling loop or a stale finish callback swallowing the seek.
+                isSeeking = true
+                seekTarget = value.coerceIn(0f, duration.coerceAtLeast(1L).toFloat())
+                position = seekTarget.toLong()
+                controller?.let { player ->
+                    if (player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+                        player.seekTo(position.coerceIn(0L, duration.coerceAtLeast(0L)))
+                    }
+                }
+            },
+            onValueChangeFinished = {
+                val target = seekTarget.toLong().coerceIn(0L, duration.coerceAtLeast(0L))
+                controller?.let { player ->
+                    if (player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) player.seekTo(target)
+                }
+                position = target
+                isSeeking = false
+            },
+            modifier = Modifier.fillMaxWidth().graphicsLayer { scaleY = sliderScale }
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatDuration(position), color = Color.Gray, style = MaterialTheme.typography.labelSmall)
