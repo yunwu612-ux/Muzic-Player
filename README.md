@@ -1,12 +1,12 @@
-# 本地音乐 V2.0
+# 本地音乐 V2.1
 
 ## 更新内容
-- 全新紫灰色音乐库 UI 与更清晰的歌曲卡片。
-- 保留播放页转场、封面动画、播放按钮动画、歌曲播放脉冲与歌词自动滚动。
-- 修复歌词行宽度随文本变化导致视觉上横向漂移的问题：歌词行统一占满容器宽度并居中显示。
-- LazyColumn 使用稳定 key/contentType，动画属性尽量走 graphicsLayer，减少滚动和动画期间的额外布局工作。
-- 保留 V1.2 的 LRC/TXT 歌词导入与封面导入。
-- versionCode=4，versionName=2.0。
+- 修复播放进度条拖动时被播放进度刷新覆盖的问题，松手后调用 Media3 seekTo。
+- 播放页封面保持静止，不再倾斜旋转。
+- 新增底部 Dock：音乐、播放列表、公告栏。
+- 支持创建、删除播放列表，向列表添加本地歌曲，并播放列表中的歌曲。
+- 播放列表保存于本地应用偏好设置。
+- 保留现有播放页转场、歌曲脉冲、按钮状态动画和歌词自动滚动。
 
 ## 构建
-通过 GitHub Actions 构建。Release 签名继续使用仓库已配置的签名 Secrets；不要将 keystore 文件提交到仓库。
+上传项目到 GitHub 后运行 Actions。需要仓库中配置 KEYSTORE_BASE64、KEYSTORE_PASSWORD、KEY_ALIAS、KEY_PASSWORD 四个 Actions Secrets。

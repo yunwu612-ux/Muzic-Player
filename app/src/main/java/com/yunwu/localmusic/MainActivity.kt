@@ -59,6 +59,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -107,6 +109,17 @@ private fun importCover(context: Context, id: Long, source: android.net.Uri): an
     android.net.Uri.fromFile(target)
 }.getOrNull()
 
+
+private const val KEY_PLAYLISTS = "user_playlists_v1"
+private fun loadPlaylists(context: Context): Map<String, List<Long>> = runCatching {
+    val root = JSONObject(metadataPrefs(context).getString(KEY_PLAYLISTS, "{}") ?: "{}")
+    buildMap { val keys = root.keys(); while (keys.hasNext()) { val name = keys.next(); val arr = root.optJSONArray(name) ?: JSONArray(); put(name, (0 until arr.length()).mapNotNull { arr.optLong(it).takeIf { id -> id > 0L } }) } }
+}.getOrDefault(emptyMap())
+private fun savePlaylists(context: Context, playlists: Map<String, List<Long>>) {
+    val root = JSONObject(); playlists.forEach { (name, ids) -> root.put(name, JSONArray(ids)) }
+    metadataPrefs(context).edit().putString(KEY_PLAYLISTS, root.toString()).apply()
+}
+
 @Composable
 private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     val context = LocalContext.current
@@ -116,6 +129,12 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     var showPlayer by remember { mutableStateOf(false) }
     var currentId by remember { mutableStateOf<Long?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var playlists by remember { mutableStateOf(loadPlaylists(context)) }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+    var activePlaylist by remember { mutableStateOf<String?>(null) }
+    var addToPlaylist by remember { mutableStateOf<String?>(null) }
     val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> permissionGranted = ok }
 
@@ -162,17 +181,61 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     Scaffold(
         containerColor = Color(0xFFF4F2FA),
         bottomBar = {
-            AnimatedVisibility(
-                visible = currentSong != null && !showPlayer,
-                enter = slideInVertically { it } + fadeIn(),
-                exit = fadeOut()
-            ) {
-                currentSong?.let { MiniPlayer(it, isPlaying, controller) { showPlayer = true } }
+            Column {
+                AnimatedVisibility(visible = currentSong != null && !showPlayer, enter = slideInVertically { it } + fadeIn(), exit = fadeOut()) {
+                    currentSong?.let { MiniPlayer(it, isPlaying, controller) { showPlayer = true } }
+                }
+                NavigationBar(containerColor = Color.White) {
+                    NavigationBarItem(selected = selectedTab == 0, onClick = { selectedTab = 0; activePlaylist = null }, icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("音乐") })
+                    NavigationBarItem(selected = selectedTab == 1, onClick = { selectedTab = 1 }, icon = { Icon(Icons.Default.QueueMusic, null) }, label = { Text("播放列表") })
+                    NavigationBarItem(selected = selectedTab == 2, onClick = { selectedTab = 2 }, icon = { Icon(Icons.Default.Campaign, null) }, label = { Text("公告栏") })
+                }
             }
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            if (selectedTab == 1) {
+                Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                    Spacer(Modifier.height(20.dp))
+                    Text("播放列表", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFF24213A))
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = { showCreatePlaylist = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("创建播放列表") }
+                    Spacer(Modifier.height(12.dp))
+                    if (playlists.isEmpty()) Text("还没有播放列表，点击上方创建。", color = Color.Gray, modifier = Modifier.padding(12.dp))
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        items(playlists.keys.toList(), key = { it }) { name ->
+                            Card(Modifier.fillMaxWidth().clickable { activePlaylist = if (activePlaylist == name) null else name }, colors = CardDefaults.cardColors(containerColor = if (activePlaylist == name) Color(0xFFE9E6FF) else Color.White)) {
+                                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.QueueMusic, null, tint = Color(0xFF7167D9)); Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.SemiBold); Text("${playlists[name]?.size ?: 0} 首歌曲", color = Color.Gray, style = MaterialTheme.typography.bodySmall) }
+                                    IconButton(onClick = { addToPlaylist = name }) { Icon(Icons.Default.Add, "添加歌曲") }
+                                    IconButton(onClick = { playlists = playlists - name; savePlaylists(context, playlists); if (activePlaylist == name) activePlaylist = null }) { Icon(Icons.Default.DeleteOutline, "删除列表") }
+                                }
+                            }
+                            if (activePlaylist == name) {
+                                val members = songs.filter { it.id in (playlists[name] ?: emptyList()) }
+                                if (members.isEmpty()) Text("列表为空，点右侧 + 添加歌曲。", color = Color.Gray, modifier = Modifier.padding(12.dp))
+                                members.forEach { item -> SongRow(item, currentId == item.id && isPlaying) { playSongList(controller, members, item); currentId = item.id; showPlayer = true } }
+                            }
+                        }
+                    }
+                }
+            } else if (selectedTab == 2) {
+                Column(Modifier.fillMaxSize().padding(20.dp)) {
+                    Spacer(Modifier.height(20.dp))
+                    Text("公告栏", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(16.dp))
+                    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("本地音乐 V2.1", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("• 修复播放进度条拖动与跳转\n• 播放封面保持静止\n• 新增音乐、播放列表和公告栏 Dock\n• 播放列表支持创建、添加歌曲和删除", color = Color.DarkGray)
+                            Spacer(Modifier.height(12.dp))
+                            Text("提示：卸载 App 可能会清除本地播放列表和导入的封面/歌词，请先备份。", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            } else Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 Spacer(Modifier.height(18.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -239,6 +302,18 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
                         onRefresh = { scan() }
                     )
                 }
+            }
+            if (showCreatePlaylist) AlertDialog(
+                onDismissRequest = { showCreatePlaylist = false },
+                title = { Text("新建播放列表") },
+                text = { OutlinedTextField(newPlaylistName, { newPlaylistName = it }, label = { Text("列表名称") }, singleLine = true) },
+                confirmButton = { TextButton(onClick = { val n = newPlaylistName.trim(); if (n.isNotEmpty() && n !in playlists) { playlists = playlists + (n to emptyList()); savePlaylists(context, playlists); newPlaylistName = ""; showCreatePlaylist = false } }) { Text("创建") } },
+                dismissButton = { TextButton(onClick = { showCreatePlaylist = false }) { Text("取消") } }
+            )
+            addToPlaylist?.let { name ->
+                AlertDialog(onDismissRequest = { addToPlaylist = null }, title = { Text("添加歌曲到 $name") },
+                    text = { LazyColumn(Modifier.heightIn(max = 360.dp)) { items(songs, key = { it.id }) { item -> Row(Modifier.fillMaxWidth().clickable { val updated = (playlists[name] ?: emptyList()) + item.id; playlists = playlists + (name to updated.distinct()); savePlaylists(context, playlists); addToPlaylist = null }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.MusicNote, null); Spacer(Modifier.width(10.dp)); Column { Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(item.artist, color = Color.Gray, style = MaterialTheme.typography.bodySmall) } } } } },
+                    confirmButton = { TextButton(onClick = { addToPlaylist = null }) { Text("完成") } })
             }
         }
     }
@@ -350,12 +425,13 @@ private fun PlayerPage(
     var repeatMode by remember { mutableIntStateOf(controller?.repeatMode ?: Player.REPEAT_MODE_OFF) }
     var shuffle by remember { mutableStateOf(controller?.shuffleModeEnabled ?: false) }
     var lyricsIndex by remember { mutableIntStateOf(0) }
+    var isSeeking by remember { mutableStateOf(false) }
     val lyrics = remember(song.id, song.lyrics) { parseLyrics(song.lyrics) }
 
     LaunchedEffect(controller, song.id, lyrics) {
         while (true) {
             controller?.let {
-                position = it.currentPosition.coerceAtLeast(0L)
+                if (!isSeeking) position = it.currentPosition.coerceAtLeast(0L)
                 duration = it.duration.takeIf { d -> d > 0 } ?: song.duration
                 if (lyrics.isNotEmpty()) {
                     lyricsIndex = lyrics.indexOfLast { line -> line.timeMs <= position }.coerceAtLeast(0)
@@ -378,12 +454,11 @@ private fun PlayerPage(
         }
 
         Spacer(Modifier.height(22.dp))
-        val rotation by animateFloatAsState(if (isPlaying) 360f else 0f, tween(900), label = "cover")
         Box(Modifier.fillMaxWidth().weight(0.34f), contentAlignment = Alignment.Center) {
             val coverBitmap = remember(song.id, song.coverUri) {
                 song.coverUri?.let { uri -> runCatching { context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream) }.getOrNull() }
             }
-            Box(Modifier.size(250.dp).graphicsLayer { rotationZ = rotation / 18f }.clip(RoundedCornerShape(32.dp)).background(Color(0xFFDDE3EA)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(250.dp).clip(RoundedCornerShape(32.dp)).background(Color(0xFFDDE3EA)), contentAlignment = Alignment.Center) {
                 if (coverBitmap != null) {
                     Image(coverBitmap.asImageBitmap(), contentDescription = "封面", modifier = Modifier.fillMaxSize())
                 } else {
@@ -397,8 +472,8 @@ private fun PlayerPage(
 
         Slider(
             value = if (duration > 0) position.toFloat().coerceIn(0f, duration.toFloat()) else 0f,
-            onValueChange = { position = it.toLong() },
-            onValueChangeFinished = { controller?.seekTo(position) }
+            onValueChange = { isSeeking = true; position = it.toLong() },
+            onValueChangeFinished = { controller?.seekTo(position.coerceIn(0L, duration.coerceAtLeast(0L))); isSeeking = false }
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatDuration(position), color = Color.Gray, style = MaterialTheme.typography.labelSmall)
