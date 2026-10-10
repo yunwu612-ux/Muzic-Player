@@ -426,7 +426,7 @@ private fun PlayerPage(
     var shuffle by remember { mutableStateOf(controller?.shuffleModeEnabled ?: false) }
     var lyricsIndex by remember { mutableIntStateOf(0) }
     var isSeeking by remember { mutableStateOf(false) }
-    var seekTarget by remember(song.id) { mutableFloatStateOf(0f) }
+    var seekTarget by remember(song.id) { mutableLongStateOf(0L) }
     val sliderScale by animateFloatAsState(
         targetValue = if (isSeeking) 1.12f else 1f,
         animationSpec = tween(durationMillis = 140),

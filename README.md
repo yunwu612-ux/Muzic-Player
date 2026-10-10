@@ -1,11 +1,9 @@
-# 本地音乐 V2.1.2
+# 本地音乐 V2.1.3
 
-## 本次修复
-- 修复播放进度条映射错误：滑块内部使用 0%–100% 比例，提交跳转时再换算成毫秒。
-- 拖动时只预览目标时间，松开后再请求播放器定位，避免连续 seek 导致播放重启或跳到结尾。
-- 保留 V2.1.1 的本地音乐库、自定义播放列表、公告栏、静止封面和现有动效。
+本版本修复 V2.1.2 进度条代码中的 Kotlin 类型不匹配问题。拖动目标时间统一使用 `Long` 毫秒，Material3 Slider 的值仍使用 `Float` 比例，松手后再转换为毫秒调用播放器定位。
 
-## GitHub Actions 构建
-将整个项目上传到原来的 `Muzic-Player` 仓库，确保之前的签名 Secrets 仍然存在，然后在 Actions 运行 `Build Signed APK`。成功后下载 `LocalMusicPlayer-V2.1.2-signed` artifact。请继续使用同一签名密钥，以便覆盖更新并保留应用数据。
+保留音乐库、自定义播放列表、公告栏、静止封面和已有动效。
 
-注意：此 ZIP 已检查压缩包完整性；当前环境无法实际运行 Gradle 或真机播放测试，请以 GitHub Actions 构建结果和设备测试为准。
+## 构建
+
+将完整项目上传到原来的 `Muzic-Player` 仓库，确认现有 GitHub Actions 签名 Secrets 仍在，然后运行 Actions。成功后下载 `LocalMusicPlayer-V2.1.3-signed`。
