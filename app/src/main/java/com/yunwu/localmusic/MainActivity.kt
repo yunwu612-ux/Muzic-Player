@@ -480,23 +480,29 @@ private fun PlayerPage(
         Spacer(Modifier.height(12.dp))
 
         Slider(
-            value = if (duration > 0) (if (isSeeking) seekTarget else position.toFloat()).coerceIn(0f, duration.toFloat()) else 0f,
-            onValueChange = { value ->
-                // Update the thumb immediately and send the seek while dragging. This avoids
-                // the playback polling loop or a stale finish callback swallowing the seek.
+            // Material3 Slider uses a 0f..1f range by default. Keep its value as a
+            // normalized fraction and convert to milliseconds only when seeking.
+            value = if (duration > 0L) {
+                ((if (isSeeking) seekTarget else position).toDouble() / duration.toDouble())
+                    .toFloat().coerceIn(0f, 1f)
+            } else 0f,
+            valueRange = 0f..1f,
+            onValueChange = { fraction ->
                 isSeeking = true
-                seekTarget = value.coerceIn(0f, duration.coerceAtLeast(1L).toFloat())
-                position = seekTarget.toLong()
-                controller?.let { player ->
-                    if (player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
-                        player.seekTo(position.coerceIn(0L, duration.coerceAtLeast(0L)))
-                    }
-                }
+                val safeDuration = duration.coerceAtLeast(0L)
+                seekTarget = (fraction.coerceIn(0f, 1f).toDouble() * safeDuration.toDouble())
+                    .toLong().coerceIn(0L, safeDuration)
+                // Preview the selected time locally. Do not repeatedly seek while
+                // the finger is moving, which can restart playback on some sources.
+                position = seekTarget
             },
             onValueChangeFinished = {
-                val target = seekTarget.toLong().coerceIn(0L, duration.coerceAtLeast(0L))
+                val safeDuration = duration.coerceAtLeast(0L)
+                val target = seekTarget.coerceIn(0L, safeDuration)
                 controller?.let { player ->
-                    if (player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) player.seekTo(target)
+                    if (player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+                        player.seekTo(target)
+                    }
                 }
                 position = target
                 isSeeking = false
