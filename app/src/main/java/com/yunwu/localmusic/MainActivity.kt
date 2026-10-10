@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -159,7 +160,7 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     val currentSong = songs.firstOrNull { it.id == currentId }
 
     Scaffold(
-        containerColor = Color(0xFFF7F7F7),
+        containerColor = Color(0xFFF4F2FA),
         bottomBar = {
             AnimatedVisibility(
                 visible = currentSong != null && !showPlayer,
@@ -173,15 +174,31 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 Spacer(Modifier.height(18.dp))
-                Text("本地音乐", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("简单、干净，只播放手机里的音乐", color = Color.Gray)
-                Spacer(Modifier.height(14.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF24213A))
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("LOCAL MUSIC", color = Color(0xFFB9B3FF), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(5.dp))
+                            Text("本地音乐", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                            Text("你的音乐，只属于你的设备", color = Color(0xFFD0CDDF), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Box(Modifier.size(58.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF7167D9)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.GraphicEq, null, tint = Color.White, modifier = Modifier.size(34.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
                     placeholder = { Text("搜索歌曲、歌手或专辑") },
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     trailingIcon = { IconButton(onClick = { scan() }) { Icon(Icons.Default.Refresh, "刷新") } },
-                    shape = RoundedCornerShape(18.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White, focusedBorderColor = Color(0xFF7167D9), unfocusedBorderColor = Color(0xFFE5E1EF))
                 )
                 Spacer(Modifier.height(14.dp))
                 if (!permissionGranted) {
@@ -189,10 +206,14 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
                 } else if (filtered.isEmpty()) {
                     EmptyState(songs.isEmpty())
                 } else {
-                    Text("全部歌曲 · ${filtered.size}", style = MaterialTheme.typography.titleMedium)
+                    Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("全部歌曲", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF24213A))
+                        Spacer(Modifier.width(8.dp))
+                        Surface(shape = CircleShape, color = Color(0xFFE5E1FB)) { Text("${filtered.size} 首", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color(0xFF5147B8), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                    }
                     Spacer(Modifier.height(6.dp))
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
-                        items(filtered, key = { it.id }) { song ->
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
+                        items(filtered, key = { it.id }, contentType = { "song" }) { song ->
                             SongRow(song, currentId == song.id && isPlaying) {
                                 playSongList(controller, filtered, song)
                                 currentId = song.id
@@ -278,14 +299,14 @@ private fun SongRow(song: MusicItem, playing: Boolean, onClick: () -> Unit) {
         label = "pulse"
     )
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(if (playing) Color(0xFFE8F0FE) else Color.Transparent)
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(if (playing) Color(0xFFE9E6FF) else Color.White)
             .clickable { onClick() }.padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(50.dp).graphicsLayer { scaleX = if (playing) pulse else 1f; scaleY = if (playing) pulse else 1f }
-            .clip(RoundedCornerShape(12.dp)).background(Color(0xFFDDE3EA)), contentAlignment = Alignment.Center) {
-            Icon(if (playing) Icons.Default.VolumeUp else Icons.Default.MusicNote, null, tint = Color.DarkGray)
+            .clip(RoundedCornerShape(14.dp)).background(if (playing) Color(0xFF7167D9) else Color(0xFFEDEAF5)), contentAlignment = Alignment.Center) {
+            Icon(if (playing) Icons.Default.VolumeUp else Icons.Default.MusicNote, null, tint = if (playing) Color.White else Color(0xFF625B83))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -340,13 +361,13 @@ private fun PlayerPage(
                     lyricsIndex = lyrics.indexOfLast { line -> line.timeMs <= position }.coerceAtLeast(0)
                 }
             }
-            delay(300)
+            delay(200)
         }
     }
 
     BackHandlerCompat(onBack)
 
-    Column(Modifier.fillMaxSize().background(Color(0xFFF7F7F7)).padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().background(Color(0xFFF4F2FA)).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.KeyboardArrowDown, "返回") }
             Text("正在播放", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -481,15 +502,16 @@ private fun PlayerEditButton(context: Context, song: MusicItem, onRefresh: () ->
 private fun LyricsPanel(lines: List<LyricLine>, active: Int) {
     val state = rememberLazyListState()
     LaunchedEffect(active) {
-        if (lines.isNotEmpty()) state.animateScrollToItem(active.coerceIn(0, lines.lastIndex))
+        if (lines.isNotEmpty()) state.animateScrollToItem(active.coerceIn(0, lines.lastIndex), scrollOffset = -48)
     }
     Card(Modifier.fillMaxWidth().height(145.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         LazyColumn(state = state, contentPadding = PaddingValues(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            itemsIndexed(lines, key = { i, _ -> i }) { index, line ->
+            itemsIndexed(lines, key = { i, line -> "${line.timeMs}_$i" }, contentType = { _, _ -> "lyric-line" }) { index, line ->
                 val activeLine = index == active
                 Text(
                     line.text,
-                    modifier = Modifier.padding(vertical = 6.dp, horizontal = 18.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 18.dp),
+                    textAlign = TextAlign.Center,
                     color = if (activeLine) MaterialTheme.colorScheme.primary else Color.Gray,
                     fontWeight = if (activeLine) FontWeight.Bold else FontWeight.Normal,
                     style = if (activeLine) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
