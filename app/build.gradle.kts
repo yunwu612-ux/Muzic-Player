@@ -21,8 +21,8 @@ android {
         applicationId = "com.yunwu.localmusic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "2.1.4"
+        versionCode = 9
+        versionName = "3.0"
     }
 
     signingConfigs {

@@ -16,6 +16,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -179,13 +181,13 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
     val currentSong = songs.firstOrNull { it.id == currentId }
 
     Scaffold(
-        containerColor = Color(0xFFF4F2FA),
+        containerColor = Color(0xFFD8DCE0),
         bottomBar = {
             Column {
                 AnimatedVisibility(visible = currentSong != null && !showPlayer, enter = slideInVertically { it } + fadeIn(), exit = fadeOut()) {
                     currentSong?.let { MiniPlayer(it, isPlaying, controller) { showPlayer = true } }
                 }
-                NavigationBar(containerColor = Color.White) {
+                NavigationBar(containerColor = Color(0xFFE8EAEC), contentColor = Color(0xFF252A30)) {
                     NavigationBarItem(selected = selectedTab == 0, onClick = { selectedTab = 0; activePlaylist = null }, icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("音乐") })
                     NavigationBarItem(selected = selectedTab == 1, onClick = { selectedTab = 1 }, icon = { Icon(Icons.Default.QueueMusic, null) }, label = { Text("播放列表") })
                     NavigationBarItem(selected = selectedTab == 2, onClick = { selectedTab = 2 }, icon = { Icon(Icons.Default.Campaign, null) }, label = { Text("公告栏") })
@@ -237,20 +239,29 @@ private fun MusicApp(controllerFuture: ListenableFuture<MediaController>?) {
                 }
             } else Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 Spacer(Modifier.height(18.dp))
+                // iPod Classic-inspired LCD header: brushed-metal shell, monochrome screen and blue selection accent.
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF24213A))
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF343A40)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
                 ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("LOCAL MUSIC", color = Color(0xFFB9B3FF), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(5.dp))
-                            Text("本地音乐", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                            Text("你的音乐，只属于你的设备", color = Color(0xFFD0CDDF), style = MaterialTheme.typography.bodySmall)
+                    Column(Modifier.fillMaxWidth().padding(7.dp)) {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)).background(Color(0xFFF4F5F3)).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("iPod-style • LOCAL MUSIC", color = Color(0xFF64717C), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(3.dp))
+                                Text("音乐", color = Color(0xFF171C20), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                                Text("${songs.size} 首本地歌曲", color = Color(0xFF59636C), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFF287CC1)) {
+                                Icon(Icons.Default.MusicNote, null, tint = Color.White, modifier = Modifier.padding(11.dp).size(28.dp))
+                            }
                         }
-                        Box(Modifier.size(58.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF7167D9)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.GraphicEq, null, tint = Color.White, modifier = Modifier.size(34.dp))
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("MENU", color = Color(0xFFDDE1E4), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.weight(1f))
+                            Text("▶  ●  ◀", color = Color(0xFFDDE1E4), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -375,13 +386,13 @@ private fun SongRow(song: MusicItem, playing: Boolean, onClick: () -> Unit) {
     )
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(if (playing) Color(0xFFE9E6FF) else Color.White)
+            .background(if (playing) Color(0xFFDCEEFF) else Color(0xFFF8F9F8))
             .clickable { onClick() }.padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(50.dp).graphicsLayer { scaleX = if (playing) pulse else 1f; scaleY = if (playing) pulse else 1f }
-            .clip(RoundedCornerShape(14.dp)).background(if (playing) Color(0xFF7167D9) else Color(0xFFEDEAF5)), contentAlignment = Alignment.Center) {
-            Icon(if (playing) Icons.Default.VolumeUp else Icons.Default.MusicNote, null, tint = if (playing) Color.White else Color(0xFF625B83))
+            .clip(RoundedCornerShape(14.dp)).background(if (playing) Color(0xFF287CC1) else Color(0xFFE4E7E9)), contentAlignment = Alignment.Center) {
+            Icon(if (playing) Icons.Default.VolumeUp else Icons.Default.MusicNote, null, tint = if (playing) Color.White else Color(0xFF58636C))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -425,6 +436,7 @@ private fun PlayerPage(
     var repeatMode by remember { mutableIntStateOf(controller?.repeatMode ?: Player.REPEAT_MODE_OFF) }
     var shuffle by remember { mutableStateOf(controller?.shuffleModeEnabled ?: false) }
     var lyricsIndex by remember { mutableIntStateOf(0) }
+    var showFullLyrics by remember { mutableStateOf(false) }
     var isSeeking by remember { mutableStateOf(false) }
     var seekTarget by remember(song.id) { mutableLongStateOf(0L) }
     val sliderScale by animateFloatAsState(
@@ -452,10 +464,10 @@ private fun PlayerPage(
 
     BackHandlerCompat(onBack)
 
-    Column(Modifier.fillMaxSize().background(Color(0xFFF4F2FA)).padding(horizontal = 18.dp)) {
+    Column(Modifier.fillMaxSize().background(Color(0xFFE0E3E5)).padding(horizontal = 18.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.KeyboardArrowDown, "返回") }
-            Text("正在播放", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("iPod classic  •  正在播放", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF22282D))
             PlayerEditButton(context, song, onRefresh)
             IconButton(onClick = { shuffle = !shuffle; controller?.shuffleModeEnabled = shuffle }) {
                 Icon(Icons.Default.Shuffle, "随机播放", tint = if (shuffle) MaterialTheme.colorScheme.primary else Color.Gray)
@@ -464,10 +476,14 @@ private fun PlayerPage(
 
         Spacer(Modifier.height(22.dp))
         Box(Modifier.fillMaxWidth().weight(0.34f), contentAlignment = Alignment.Center) {
-            val coverBitmap = remember(song.id, song.coverUri) {
-                song.coverUri?.let { uri -> runCatching { context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream) }.getOrNull() }
+            val coverBitmap by produceState<android.graphics.Bitmap?>(initialValue = null, song.id, song.coverUri) {
+                value = withContext(Dispatchers.IO) {
+                    song.coverUri?.let { uri ->
+                        runCatching { context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream) }.getOrNull()
+                    }
+                }
             }
-            Box(Modifier.size(250.dp).clip(RoundedCornerShape(32.dp)).background(Color(0xFFDDE3EA)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(250.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFF7F8F7)), contentAlignment = Alignment.Center) {
                 if (coverBitmap != null) {
                     Image(coverBitmap.asImageBitmap(), contentDescription = "封面", modifier = Modifier.fillMaxSize())
                 } else {
@@ -515,11 +531,19 @@ private fun PlayerPage(
         }
 
         Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("歌词", Modifier.weight(1f), color = Color(0xFF343B42), fontWeight = FontWeight.Bold)
+            TextButton(onClick = { showFullLyrics = true }, enabled = lyrics.isNotEmpty()) {
+                Icon(Icons.Default.Fullscreen, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("全屏歌词")
+            }
+        }
         if (lyrics.isNotEmpty()) {
             LyricsPanel(lyrics, lyricsIndex)
         } else {
-            Box(Modifier.fillMaxWidth().height(90.dp), contentAlignment = Alignment.Center) {
-                Text("这首歌没有读取到内嵌歌词", color = Color.Gray)
+            Box(Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFF5F6F5)), contentAlignment = Alignment.Center) {
+                Text("这首歌没有读取到歌词，可通过编辑按钮导入 LRC", color = Color.Gray, textAlign = TextAlign.Center)
             }
         }
 
@@ -540,6 +564,57 @@ private fun PlayerPage(
             Spacer(Modifier.size(48.dp))
         }
         Spacer(Modifier.height(8.dp))
+    }
+    if (showFullLyrics) {
+        FullScreenLyrics(
+            song = song,
+            lines = lyrics,
+            active = lyricsIndex,
+            onClose = { showFullLyrics = false }
+        )
+    }
+}
+
+@Composable
+private fun FullScreenLyrics(song: MusicItem, lines: List<LyricLine>, active: Int, onClose: () -> Unit) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(active) {
+        if (lines.isNotEmpty()) listState.animateScrollToItem(active.coerceIn(0, lines.lastIndex), scrollOffset = -120)
+    }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF101820)).padding(horizontal = 22.dp, vertical = 18.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭全屏歌词", tint = Color.White) }
+                Column(Modifier.weight(1f)) {
+                    Text("NOW PLAYING", color = Color(0xFF8ABCE8), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text(song.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                    Text(song.artist, color = Color(0xFFABB8C2), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Icon(Icons.Default.GraphicEq, null, tint = Color(0xFF6AB6F2), modifier = Modifier.size(28.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+            if (lines.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无歌词", color = Color.White) }
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 180.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    itemsIndexed(lines, key = { index, line -> "full-${line.timeMs}-$index" }) { index, line ->
+                        val selected = index == active
+                        val scale by animateFloatAsState(if (selected) 1.06f else 1f, animationSpec = tween(260), label = "lyric-scale")
+                        val color by animateColorAsState(if (selected) Color(0xFF8CCBFF) else Color(0xFF7F8C96), animationSpec = tween(260), label = "lyric-color")
+                        Text(
+                            line.text,
+                            modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }.padding(vertical = 15.dp, horizontal = 8.dp),
+                            textAlign = TextAlign.Center,
+                            color = color,
+                            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Normal,
+                            style = if (selected) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -613,16 +688,18 @@ private fun LyricsPanel(lines: List<LyricLine>, active: Int) {
     LaunchedEffect(active) {
         if (lines.isNotEmpty()) state.animateScrollToItem(active.coerceIn(0, lines.lastIndex), scrollOffset = -48)
     }
-    Card(Modifier.fillMaxWidth().height(145.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(Modifier.fillMaxWidth().height(145.dp), shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F6F5))) {
         LazyColumn(state = state, contentPadding = PaddingValues(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             itemsIndexed(lines, key = { i, line -> "${line.timeMs}_$i" }, contentType = { _, _ -> "lyric-line" }) { index, line ->
                 val activeLine = index == active
+                val lineScale by animateFloatAsState(if (activeLine) 1.035f else 1f, animationSpec = tween(220), label = "lyric-line-scale")
+                val lineColor by animateColorAsState(if (activeLine) Color(0xFF176EB1) else Color(0xFF8A9298), animationSpec = tween(220), label = "lyric-line-color")
                 Text(
                     line.text,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 18.dp),
+                    modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = lineScale; scaleY = lineScale }.padding(vertical = 6.dp, horizontal = 18.dp),
                     textAlign = TextAlign.Center,
-                    color = if (activeLine) MaterialTheme.colorScheme.primary else Color.Gray,
-                    fontWeight = if (activeLine) FontWeight.Bold else FontWeight.Normal,
+                    color = lineColor,
+                    fontWeight = if (activeLine) FontWeight.ExtraBold else FontWeight.Normal,
                     style = if (activeLine) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
