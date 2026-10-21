@@ -16,7 +16,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -483,9 +483,10 @@ private fun PlayerPage(
                     }
                 }
             }
+            val loadedCover = coverBitmap
             Box(Modifier.size(250.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFF7F8F7)), contentAlignment = Alignment.Center) {
-                if (coverBitmap != null) {
-                    Image(coverBitmap.asImageBitmap(), contentDescription = "封面", modifier = Modifier.fillMaxSize())
+                if (loadedCover != null) {
+                    Image(loadedCover.asImageBitmap(), contentDescription = "封面", modifier = Modifier.fillMaxSize())
                 } else {
                     Icon(Icons.Default.MusicNote, null, Modifier.size(110.dp), tint = Color(0xFF66717E))
                 }
